@@ -382,8 +382,8 @@ def _draw_wholebody(canvas, kpts, scores, threshold=0.3,
             if (x1 > 1 and y1 > 1 and x2 > 1 and y2 > 1
                     and 0 <= x1 < W and 0 <= y1 < H
                     and 0 <= x2 < W and 0 <= y2 < H):
-                r, g, b_c = colorsys.hsv_to_rgb(ie / len(HAND_EDGES), 1.0, 1.0)
-                color = (int(b_c * 255), int(g * 255), int(r * 255))
+                red, green, blue = colorsys.hsv_to_rgb(ie / len(HAND_EDGES), 1.0, 1.0)
+                color = (int(blue * 255), int(green * 255), int(red * 255))
                 cv2.line(canvas, (x1, y1), (x2, y2), color, f_lw)
         for i in range(start_idx, start_idx + 21):
             if i >= len(scores) or scores[i] < threshold:
@@ -1025,9 +1025,9 @@ class IBBPoseJsonToImage:
                             x2, y2 = int(hk[eb, 0]), int(hk[eb, 1])
                             if (0 < x1 < width and 0 < y1 < height
                                     and 0 < x2 < width and 0 < y2 < height):
-                                r, g, b_c = colorsys.hsv_to_rgb(ie / len(HAND_EDGES), 1.0, 1.0)
+                                red, green, blue = colorsys.hsv_to_rgb(ie / len(HAND_EDGES), 1.0, 1.0)
                                 cv2.line(canvas, (x1, y1), (x2, y2),
-                                         (int(b_c * 255), int(g * 255), int(r * 255)), f_lw)
+                                         (int(blue * 255), int(green * 255), int(red * 255)), f_lw)
                         for i in range(n_h):
                             if hs[i] < threshold:
                                 continue
