@@ -1,5 +1,6 @@
 import warnings
 import logging
+import colorsys
 import os
 import urllib.request
 
@@ -116,9 +117,7 @@ from pathlib import Path
 import glob
 import cv2
 import math
-import matplotlib.colors
 import tempfile
-from torchvision import transforms
 try:
     import model_management
 except ImportError:
@@ -432,8 +431,8 @@ def draw_wholebody_keypoints_openpose_style(canvas, keypoints, scores=None, thre
             if scores is not None and (scores[idx1] < threshold or scores[idx2] < threshold): continue
             x1, y1 = int(keypoints[idx1][0]), int(keypoints[idx1][1]); x2, y2 = int(keypoints[idx2][0]), int(keypoints[idx2][1])
             if x1 > 0.01 and y1 > 0.01 and x2 > 0.01 and y2 > 0.01 and 0 <= x1 < W and 0 <= y1 < H and 0 <= x2 < W and 0 <= y2 < H:
-                color = matplotlib.colors.hsv_to_rgb([ie / float(len(hand_edges)), 1.0, 1.0]) * 255
-                cv2.line(canvas, (x1, y1), (x2, y2), color, thickness=face_hand_line_width)
+                color = colorsys.hsv_to_rgb(ie / float(len(hand_edges)), 1.0, 1.0)
+                cv2.line(canvas, (x1, y1), (x2, y2), tuple(int(channel * 255) for channel in color), thickness=face_hand_line_width)
         for i in range(92, 113):
             if scores is not None and scores[i] < threshold: continue
             x, y = int(keypoints[i][0]), int(keypoints[i][1])
@@ -444,8 +443,8 @@ def draw_wholebody_keypoints_openpose_style(canvas, keypoints, scores=None, thre
             if scores is not None and (scores[idx1] < threshold or scores[idx2] < threshold): continue
             x1, y1 = int(keypoints[idx1][0]), int(keypoints[idx1][1]); x2, y2 = int(keypoints[idx2][0]), int(keypoints[idx2][1])
             if x1 > 0.01 and y1 > 0.01 and x2 > 0.01 and y2 > 0.01 and 0 <= x1 < W and 0 <= y1 < H and 0 <= x2 < W and 0 <= y2 < H:
-                color = matplotlib.colors.hsv_to_rgb([ie / float(len(hand_edges)), 1.0, 1.0]) * 255
-                cv2.line(canvas, (x1, y1), (x2, y2), color, thickness=face_hand_line_width)
+                color = colorsys.hsv_to_rgb(ie / float(len(hand_edges)), 1.0, 1.0)
+                cv2.line(canvas, (x1, y1), (x2, y2), tuple(int(channel * 255) for channel in color), thickness=face_hand_line_width)
         for i in range(113, 134):
             if scores is not None and i < len(scores) and scores[i] < threshold: continue
             x, y = int(keypoints[i][0]), int(keypoints[i][1])
@@ -562,6 +561,8 @@ def detect_person_yolo(image, yolo_model_path, confidence_threshold=0.5):
         return [[0, 0, image.shape[1], image.shape[0]]], False
 
 def preprocess_image_for_sdpose(image, bbox=None, input_size=(768, 1024)):
+    from torchvision import transforms
+
     if isinstance(image, np.ndarray):
         pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     else: pil_image = image
