@@ -21,6 +21,10 @@ from pathlib import Path
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+def _exc_summary(exc: Exception) -> str:
+    return f"{exc.__class__.__name__}: {exc}"
+
+
 try:
     import torch
     TORCH_AVAILABLE = True
@@ -56,7 +60,7 @@ except Exception as _e:
 
     torch = _TorchStub()
     print(
-        f"IBB_POSE: torch not available ({_e}). "
+        f"IBB_POSE: torch not available ({_exc_summary(_e)}). "
         "Importing in limited mode only; runtime execution is disabled until torch is installed."
     )
 
@@ -118,14 +122,20 @@ try:
     ULTRALYTICS_AVAILABLE = True
 except Exception as _e:
     ULTRALYTICS_AVAILABLE = False
-    print(f"IBB_POSE: ultralytics not available ({_e}). Body/OpenPose mode disabled.")
+    print(
+        f"IBB_POSE: ultralytics not available ({_exc_summary(_e)}). "
+        "Body/OpenPose mode disabled."
+    )
 
 try:
     import onnxruntime as ort
     ONNXRUNTIME_AVAILABLE = True
 except Exception as _e:
     ONNXRUNTIME_AVAILABLE = False
-    print(f"IBB_POSE: onnxruntime not available ({_e}). WholeBody mode disabled.")
+    print(
+        f"IBB_POSE: onnxruntime not available ({_exc_summary(_e)}). "
+        "WholeBody mode disabled."
+    )
 
 # Model directory
 IBB_POSE_MODEL_DIR = os.path.join(folder_paths.models_dir, "IBB_POSE")
@@ -152,6 +162,8 @@ YOLO_DET_URL   = f"https://github.com/ultralytics/assets/releases/download/v8.3.
 DWPOSE_HF_REPO   = "yzd-v/DWPose"
 DWPOSE_POSE_FILE = "dw-ll_ucoco_384.onnx"
 DWPOSE_DET_FILE  = "yolox_l.onnx"
+# Direct resolve URLs keep install-time dependencies minimal. If the upstream Hub
+# layout changes, users can still place the same filenames into IBB_POSE_MODEL_DIR.
 DWPOSE_MODEL_URLS = {
     DWPOSE_POSE_FILE: f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_POSE_FILE}?download=true",
     DWPOSE_DET_FILE:  f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_DET_FILE}?download=true",
@@ -718,6 +730,7 @@ class IBBLoadPoseModel:
             print(f"IBB_POSE: Loading DWPose ONNX | providers: {providers}")
             det_session  = ort.InferenceSession(det_path,  providers=providers)
             pose_session = ort.InferenceSession(pose_path, providers=providers)
+            print("IBB_POSE: WholeBody detector backend -> YOLOX ONNX.")
 
             model_info["backend"]      = "dwpose_onnx"
             model_info["det_session"]  = det_session

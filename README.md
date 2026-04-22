@@ -47,7 +47,11 @@ Inspired by [SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD).
 ### Windows / ComfyUI install note
 
 - `IBB_POSE` no longer requires `groundingdino-py`, `chumpy` or `huggingface_hub` during node installation.
-- If your embedded ComfyUI Python had previous failed installs cached, remove those partial packages before retrying.
+- If your embedded ComfyUI Python had previous failed installs cached, remove those partial packages before retrying, for example:
+  ```bash
+  python -m pip uninstall -y groundingdino-py chumpy huggingface_hub
+  python -m pip cache purge
+  ```
 - The node now keeps heavy pose backends optional and only imports them when the selected mode needs them.
 
 ### Manual model placement
