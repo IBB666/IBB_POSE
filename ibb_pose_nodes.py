@@ -139,15 +139,12 @@ try:
         warnings.simplefilter("ignore")
         from ultralytics import YOLO as _YOLO
     ULTRALYTICS_AVAILABLE = True
-    YOLO = _YOLO
 except Exception as _e:
     ULTRALYTICS_AVAILABLE = False
-    YOLO = None
     print(
         f"IBB_POSE: ultralytics not available ({_exc_summary(_e)}). "
         "Body/OpenPose mode disabled."
     )
-YOLO_AVAILABLE = ULTRALYTICS_AVAILABLE
 
 try:
     import onnxruntime as ort
@@ -547,9 +544,9 @@ def groundingdino_predict(dino_model_wrapper, image_pil, prompt, threshold):
 # --- Processing functions (adapted from SDPose_gradio.py) ---
 # (Functions detect_person_yolo, preprocess_image_for_sdpose, restore_keypoints_to_original, convert_to_openpose_json are omitted for brevity but would be pasted here)
 def detect_person_yolo(image, yolo_model_path, confidence_threshold=0.5):
-    if not YOLO_AVAILABLE: return [[0, 0, image.shape[1], image.shape[0]]], False
+    if not ULTRALYTICS_AVAILABLE: return [[0, 0, image.shape[1], image.shape[0]]], False
     try:
-        model = YOLO(yolo_model_path)
+        model = _YOLO(yolo_model_path)
         results = model(image, verbose=False)
         person_bboxes = []
         for result in results:
@@ -804,7 +801,7 @@ class IBBYOLOModelLoader:
     CATEGORY = "IBB_POSE"
 
     def load_yolo_model(self, model_name):
-        if not YOLO_AVAILABLE:
+        if not ULTRALYTICS_AVAILABLE:
             raise ImportError("ultralytics library is not available. Please install it to use YOLO models.")
         
         model_path = folder_paths.get_full_path("yolo", model_name)
@@ -812,7 +809,7 @@ class IBBYOLOModelLoader:
             raise FileNotFoundError(f"YOLO model not found: {model_name}")
             
         print(f"IBB_POSE: Loading YOLO model from {model_path}")
-        model = YOLO(model_path)
+        model = _YOLO(model_path)
         return (model,)
 
 
@@ -1162,7 +1159,7 @@ class IBBPoseProcessor:
                             detection_source = "GroundingDINO"
                     except Exception: pass
 
-            if not bboxes and yolo_model is not None and YOLO_AVAILABLE:
+            if not bboxes and yolo_model is not None and ULTRALYTICS_AVAILABLE:
                 try:
                     results = yolo_model(original_image_bgr, verbose=False)
                     yolo_bboxes = []
