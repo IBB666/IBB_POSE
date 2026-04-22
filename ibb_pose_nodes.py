@@ -21,7 +21,42 @@ from pathlib import Path
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except Exception as _e:
+    TORCH_AVAILABLE = False
+
+    class _TorchCudaStub:
+        @staticmethod
+        def is_available():
+            return False
+
+        @staticmethod
+        def empty_cache():
+            return None
+
+    class _TorchDeviceStub:
+        def __init__(self, device_type):
+            self.type = str(device_type)
+
+        def __str__(self):
+            return self.type
+
+    class _TorchStub:
+        Tensor = object
+        float32 = "float32"
+        float16 = "float16"
+        bfloat16 = "bfloat16"
+        cuda = _TorchCudaStub()
+
+        @staticmethod
+        def device(device_type):
+            return _TorchDeviceStub(device_type)
+
+    torch = _TorchStub()
+    print(f"IBB_POSE: torch not available ({_e}). Importing in limited mode.")
+
 import numpy as np
 import cv2
 from PIL import Image
@@ -89,13 +124,6 @@ except Exception as _e:
     ONNXRUNTIME_AVAILABLE = False
     print(f"IBB_POSE: onnxruntime not available ({_e}). WholeBody mode disabled.")
 
-try:
-    from huggingface_hub import hf_hub_download
-    HF_AVAILABLE = True
-except Exception as _e:
-    HF_AVAILABLE = False
-    print(f"IBB_POSE: huggingface_hub not available ({_e}). Auto-download disabled.")
-
 # Model directory
 IBB_POSE_MODEL_DIR = os.path.join(folder_paths.models_dir, "IBB_POSE")
 os.makedirs(IBB_POSE_MODEL_DIR, exist_ok=True)
@@ -120,6 +148,10 @@ YOLO_DET_URL   = "https://github.com/ultralytics/assets/releases/download/v8.3.0
 DWPOSE_HF_REPO   = "yzd-v/DWPose"
 DWPOSE_POSE_FILE = "dw-ll_ucoco_384.onnx"
 DWPOSE_DET_FILE  = "yolox_l.onnx"
+DWPOSE_MODEL_URLS = {
+    DWPOSE_POSE_FILE: f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_POSE_FILE}?download=true",
+    DWPOSE_DET_FILE:  f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_DET_FILE}?download=true",
+}
 
 # Keypoint constants
 # COCO-17 -> OpenPose-18 index map (-1 = computed Neck)
@@ -195,23 +227,12 @@ def _ensure_dwpose_models(auto_download: bool) -> tuple:
                     f"IBB_POSE: DWPose model {fname} not found at {fpath}. "
                     "Enable auto_download or place manually."
                 )
-            if HF_AVAILABLE:
-                print(f"IBB_POSE: Downloading {fname} from HuggingFace ...")
-                try:
-                    hf_hub_download(
-                        repo_id=DWPOSE_HF_REPO,
-                        filename=fname,
-                        local_dir=IBB_POSE_MODEL_DIR,
-                    )
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"IBB_POSE: Could not download {fname} from HF: {exc}"
-                    ) from exc
-            else:
-                raise ImportError(
-                    "IBB_POSE: huggingface_hub is required for auto-downloading "
-                    "DWPose models. Run: pip install huggingface_hub"
-                )
+            try:
+                _download_file(DWPOSE_MODEL_URLS[fname], fpath)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"IBB_POSE: Could not download {fname} from HuggingFace: {exc}"
+                ) from exc
 
     return det_path, pose_path
 
@@ -631,6 +652,12 @@ class IBBLoadPoseModel:
     OUTPUT_NODE   = False
 
     def load_model(self, skeleton_type, model_size, device, precision, auto_download):
+        if not TORCH_AVAILABLE:
+            raise ImportError(
+                "IBB_POSE: torch is required to run the node. "
+                "Please launch it inside ComfyUI or install torch first."
+            )
+
         if device == "auto":
             dev = model_management.get_torch_device()
         else:

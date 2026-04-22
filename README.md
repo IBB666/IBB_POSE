@@ -26,12 +26,29 @@ Inspired by [SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD).
    cd ComfyUI/custom_nodes
    git clone https://github.com/IBB666/IBB_POSE
    ```
-2. Install dependencies:
+2. Install base dependencies:
    ```bash
    cd IBB_POSE
    pip install -r requirements.txt
    ```
-3. Start ComfyUI – models download automatically on first use.
+3. Install only the backend you plan to use:
+   ```bash
+   # Body / OpenPose
+   pip install ultralytics
+
+   # WholeBody (CPU)
+   pip install onnxruntime
+
+   # WholeBody (GPU, optional replacement for CPU package)
+   # pip install onnxruntime-gpu
+   ```
+4. Start ComfyUI – models download automatically on first use.
+
+### Windows / ComfyUI install note
+
+- `IBB_POSE` no longer requires `groundingdino-py`, `chumpy` or `huggingface_hub` during node installation.
+- If your embedded ComfyUI Python had previous failed installs cached, remove those partial packages before retrying.
+- The node now keeps heavy pose backends optional and only imports them when the selected mode needs them.
 
 ### Manual model placement
 

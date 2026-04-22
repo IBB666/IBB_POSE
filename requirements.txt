@@ -1,15 +1,19 @@
 # IBB_POSE ComfyUI node dependencies
-# Compatible with Python 3.13, torch 2.10+, CUDA 12/13
+#
+# Keep install-time requirements minimal so ComfyUI can install the node even on
+# environments where optional backend packages are not available yet.
+# Backend-specific packages are loaded lazily by the node and can be installed
+# later only when the matching mode is used.
 
 # Core (required)
 opencv-python>=4.8.0
 numpy>=1.24.0
 Pillow>=10.0.0
 
-# Pose estimation backends
-ultralytics>=8.0.0              # Body / OpenPose mode (YOLO11 pose)
-onnxruntime>=1.18.0             # WholeBody mode (DWPose ONNX) – CPU
-# onnxruntime-gpu>=1.18.0       # Uncomment for GPU WholeBody acceleration
-
-# Model auto-download
-huggingface_hub>=0.20.0
+# Optional backend packages (install manually when needed)
+# Body / OpenPose:
+#   pip install ultralytics>=8.0.0
+# WholeBody CPU:
+#   pip install onnxruntime>=1.18.0
+# WholeBody GPU:
+#   pip install onnxruntime-gpu>=1.18.0
