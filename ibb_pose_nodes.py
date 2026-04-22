@@ -223,6 +223,11 @@ HAND_EDGES = [
 ]
 
 
+def _hand_edge_color(edge_index: int) -> tuple[int, int, int]:
+    color = colorsys.hsv_to_rgb(edge_index / float(len(HAND_EDGES)), 1.0, 1.0)
+    return tuple(int(channel * 255) for channel in color)
+
+
 def _download_file(url: str, dest: str) -> None:
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     print(f"IBB_POSE: Downloading {os.path.basename(dest)} ...")
@@ -431,8 +436,7 @@ def draw_wholebody_keypoints_openpose_style(canvas, keypoints, scores=None, thre
             if scores is not None and (scores[idx1] < threshold or scores[idx2] < threshold): continue
             x1, y1 = int(keypoints[idx1][0]), int(keypoints[idx1][1]); x2, y2 = int(keypoints[idx2][0]), int(keypoints[idx2][1])
             if x1 > 0.01 and y1 > 0.01 and x2 > 0.01 and y2 > 0.01 and 0 <= x1 < W and 0 <= y1 < H and 0 <= x2 < W and 0 <= y2 < H:
-                color = colorsys.hsv_to_rgb(ie / float(len(hand_edges)), 1.0, 1.0)
-                cv2.line(canvas, (x1, y1), (x2, y2), tuple(int(channel * 255) for channel in color), thickness=face_hand_line_width)
+                cv2.line(canvas, (x1, y1), (x2, y2), _hand_edge_color(ie), thickness=face_hand_line_width)
         for i in range(92, 113):
             if scores is not None and scores[i] < threshold: continue
             x, y = int(keypoints[i][0]), int(keypoints[i][1])
@@ -443,8 +447,7 @@ def draw_wholebody_keypoints_openpose_style(canvas, keypoints, scores=None, thre
             if scores is not None and (scores[idx1] < threshold or scores[idx2] < threshold): continue
             x1, y1 = int(keypoints[idx1][0]), int(keypoints[idx1][1]); x2, y2 = int(keypoints[idx2][0]), int(keypoints[idx2][1])
             if x1 > 0.01 and y1 > 0.01 and x2 > 0.01 and y2 > 0.01 and 0 <= x1 < W and 0 <= y1 < H and 0 <= x2 < W and 0 <= y2 < H:
-                color = colorsys.hsv_to_rgb(ie / float(len(hand_edges)), 1.0, 1.0)
-                cv2.line(canvas, (x1, y1), (x2, y2), tuple(int(channel * 255) for channel in color), thickness=face_hand_line_width)
+                cv2.line(canvas, (x1, y1), (x2, y2), _hand_edge_color(ie), thickness=face_hand_line_width)
         for i in range(113, 134):
             if scores is not None and i < len(scores) and scores[i] < threshold: continue
             x, y = int(keypoints[i][0]), int(keypoints[i][1])
