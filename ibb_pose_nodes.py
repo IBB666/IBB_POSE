@@ -873,6 +873,8 @@ class IBBPoseProcessor:
     
     # 一个简单的数据类，用于跟踪检测到的人
     class DetectionJob:
+        """Track one detected person crop through preprocessing, inference, and restore."""
+
         def __init__(self, frame_idx, person_idx, input_tensor, crop_info):
             self.frame_idx = frame_idx
             self.person_idx = person_idx
