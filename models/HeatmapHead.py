@@ -107,7 +107,7 @@ class _FallbackUDPHeatmap:
 
 
 class _FallbackHeatmapHead(nn.Module):
-    _version = 2
+    _version = 3
 
     def __init__(
         self,
@@ -286,6 +286,19 @@ class _FallbackHeatmapHead(nn.Module):
                 new_key = short_key
 
             state_dict[prefix + new_key] = value
+
+        self._backfill_missing_batchnorm_state(state_dict, prefix)
+
+    def _backfill_missing_batchnorm_state(self, state_dict, prefix):
+        for module_name, module in self.named_modules():
+            if not isinstance(module, nn.BatchNorm2d):
+                continue
+
+            module_prefix = prefix + module_name + "."
+            for attr_name, attr_value in module.state_dict().items():
+                state_key = module_prefix + attr_name
+                if state_key not in state_dict:
+                    state_dict[state_key] = attr_value.detach().clone()
 
 
 def get_heatmap_head(mode="body"):
