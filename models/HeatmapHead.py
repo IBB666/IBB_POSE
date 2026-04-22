@@ -224,7 +224,7 @@ class _FallbackHeatmapHead(nn.Module):
         return x
 
     def decode(self, batch_heatmaps):
-        heatmaps_np = batch_heatmaps.detach().cpu().float().numpy()
+        heatmaps_np = batch_heatmaps.detach().float().cpu().numpy()
         preds = []
         for heatmaps in heatmaps_np:
             keypoints, scores = self.decoder.decode(heatmaps)
@@ -266,7 +266,8 @@ class _FallbackHeatmapHead(nn.Module):
             if key_parts[0] == "final_layer":
                 if len(key_parts) == 3:
                     idx = int(key_parts[1])
-                    if idx < len(self.conv_layers):
+                    num_conv_layers = len(self.conv_layers) if isinstance(self.conv_layers, nn.Sequential) else 0
+                    if idx < num_conv_layers:
                         new_key = "conv_layers." + ".".join(key_parts[1:])
                     else:
                         new_key = "final_layer." + key_parts[2]
