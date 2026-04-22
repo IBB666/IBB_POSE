@@ -202,6 +202,8 @@ def _download_file(url: str, dest: str) -> None:
     print(f"IBB_POSE: Downloading {os.path.basename(dest)} ...")
     try:
         urllib.request.urlretrieve(url, dest)
+        if not os.path.exists(dest) or os.path.getsize(dest) <= 0:
+            raise RuntimeError("download produced an empty file")
         print(f"IBB_POSE: Saved -> {dest}")
     except Exception as exc:
         raise RuntimeError(f"IBB_POSE: Failed to download {url}: {exc}") from exc

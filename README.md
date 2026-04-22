@@ -40,6 +40,7 @@ Inspired by [SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD).
    pip install onnxruntime
 
    # WholeBody (GPU, optional replacement for CPU package)
+   # python -m pip uninstall -y onnxruntime
    # pip install onnxruntime-gpu
    ```
 4. Start ComfyUI – models download automatically on first use.
