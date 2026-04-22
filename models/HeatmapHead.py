@@ -17,7 +17,7 @@ from torch import nn
 
 try:
     from mmpose.registry import MODELS
-except Exception as _mmpose_import_error:
+except ImportError as _mmpose_import_error:
     MODELS = None
 else:
     _mmpose_import_error = None
@@ -269,7 +269,8 @@ class _FallbackHeatmapHead(nn.Module):
                         idx = int(key_parts[1])
                     except ValueError as exc:
                         raise RuntimeError(
-                            f"Incompatible decoder checkpoint key: {key!r}"
+                            f"Incompatible decoder checkpoint key: {key!r}. "
+                            "Expected a numeric final_layer index."
                         ) from exc
                     num_conv_layers = len(self.conv_layers) if isinstance(self.conv_layers, nn.Sequential) else 0
                     if idx < num_conv_layers:
