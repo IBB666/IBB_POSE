@@ -237,7 +237,7 @@ class _FallbackHeatmapHead(nn.Module):
         if test_cfg.get("flip_test", False):
             raise RuntimeError(
                 "The lightweight fallback heatmap head does not support MMPose flip_test. "
-                "Install mmpose/mmcv for evaluation workflows."
+                "Disable flip_test for ComfyUI inference, or install mmpose/mmcv for evaluation workflows."
             )
 
         batch_heatmaps = self.forward(feats)
@@ -265,7 +265,12 @@ class _FallbackHeatmapHead(nn.Module):
 
             if key_parts[0] == "final_layer":
                 if len(key_parts) == 3:
-                    idx = int(key_parts[1])
+                    try:
+                        idx = int(key_parts[1])
+                    except ValueError as exc:
+                        raise RuntimeError(
+                            f"Incompatible decoder checkpoint key: {key!r}"
+                        ) from exc
                     num_conv_layers = len(self.conv_layers) if isinstance(self.conv_layers, nn.Sequential) else 0
                     if idx < num_conv_layers:
                         new_key = "conv_layers." + ".".join(key_parts[1:])
