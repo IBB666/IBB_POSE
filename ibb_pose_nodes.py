@@ -36,8 +36,52 @@ except ImportError:
     # If not available, create a mock object for testing
     class MockFolderPaths:
         models_dir = os.path.expanduser("~/models")
+        output_dir = os.path.expanduser("~/output")
         supported_pt_extensions = {".pt", ".pth", ".ckpt", ".safetensors"}
         folder_names_and_paths = {}
+
+        @classmethod
+        def add_model_folder_path(cls, folder_name, full_folder_path, is_default=True):
+            cls.folder_names_and_paths.setdefault(folder_name, [])
+            if full_folder_path not in cls.folder_names_and_paths[folder_name]:
+                cls.folder_names_and_paths[folder_name].append(full_folder_path)
+
+        @classmethod
+        def get_folder_paths(cls, folder_name):
+            return cls.folder_names_and_paths.get(folder_name, [])
+
+        @classmethod
+        def get_filename_list(cls, folder_name):
+            names = []
+            for base in cls.get_folder_paths(folder_name):
+                if not os.path.isdir(base):
+                    continue
+                for entry in sorted(os.listdir(base)):
+                    path = os.path.join(base, entry)
+                    if os.path.isfile(path):
+                        names.append(entry)
+            return names
+
+        @classmethod
+        def get_full_path(cls, folder_name, filename):
+            for base in cls.get_folder_paths(folder_name):
+                path = os.path.join(base, filename)
+                if os.path.exists(path):
+                    return path
+            return None
+
+        @classmethod
+        def get_output_directory(cls):
+            os.makedirs(cls.output_dir, exist_ok=True)
+            return cls.output_dir
+
+        @classmethod
+        def get_save_image_path(cls, filename_prefix, output_dir, width, height):
+            subfolder = os.path.dirname(filename_prefix)
+            base_filename = os.path.basename(filename_prefix)
+            full_output_folder = os.path.join(output_dir, subfolder) if subfolder else output_dir
+            os.makedirs(full_output_folder, exist_ok=True)
+            return full_output_folder, base_filename, 0, subfolder, filename_prefix
     folder_paths = MockFolderPaths()
 from huggingface_hub import snapshot_download
 import sys
@@ -104,8 +148,11 @@ except Exception as e:
 SDPOSE_MODEL_DIR = os.path.join(folder_paths.models_dir, "IBB_POSE")
 YOLO_MODEL_DIR = os.path.join(folder_paths.models_dir, "yolo")
 
-folder_paths.add_model_folder_path("IBB_POSE", SDPOSE_MODEL_DIR, is_default=True)
-folder_paths.add_model_folder_path("yolo", YOLO_MODEL_DIR, is_default=False)
+try:
+    folder_paths.add_model_folder_path("IBB_POSE", SDPOSE_MODEL_DIR, is_default=True)
+    folder_paths.add_model_folder_path("yolo", YOLO_MODEL_DIR, is_default=False)
+except Exception:
+    pass
 
 os.makedirs(SDPOSE_MODEL_DIR, exist_ok=True)
 os.makedirs(YOLO_MODEL_DIR, exist_ok=True)
@@ -1205,7 +1252,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "IBBPoseModelLoader": "IBB Pose — Load SDPose Model",
+    "IBBPoseModelLoader": "IBB Pose — Load Model",
     "IBBPoseProcessor": "IBB Pose — Run SDPose Estimation",
     "IBBYOLOModelLoader": "IBB Pose — Load YOLO Model",
     "IBBGroundingDinoModelLoader": "IBB Pose — Load GroundingDINO Model",
