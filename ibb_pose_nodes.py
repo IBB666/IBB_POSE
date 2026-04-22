@@ -723,11 +723,15 @@ class IBBLoadPoseModel:
             if dev.type != "cpu":
                 cuda_prov = ["CUDAExecutionProvider", "CPUExecutionProvider"]
                 try:
-                    _t = ort.InferenceSession(pose_path, providers=cuda_prov)
-                    providers = cuda_prov
-                    del _t
+                    available = set(ort.get_available_providers())
+                    if "CUDAExecutionProvider" in available:
+                        providers = cuda_prov
+                    else:
+                        raise RuntimeError("CUDAExecutionProvider unavailable")
                 except Exception:
                     print("IBB_POSE: ONNX CUDAExecutionProvider unavailable – using CPU.")
+                else:
+                    providers = cuda_prov
 
             print(f"IBB_POSE: Loading DWPose ONNX | providers: {providers}")
             det_session  = ort.InferenceSession(det_path,  providers=providers)

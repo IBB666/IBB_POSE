@@ -33,6 +33,8 @@ Inspired by [SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD).
    ```
 3. Install only the backend you plan to use:
    ```bash
+   # Choose ONE backend path based on your workflow / hardware:
+
    # Body / OpenPose
    pip install ultralytics
 
@@ -48,7 +50,7 @@ Inspired by [SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD).
 ### Windows / ComfyUI install note
 
 - `IBB_POSE` no longer requires `groundingdino-py`, `chumpy` or `huggingface_hub` during node installation.
-- If your embedded ComfyUI Python had previous failed installs cached, remove those partial packages before retrying, for example:
+- If your embedded ComfyUI Python had previous failed installs cached, remove those partial packages before retrying, for example. Only do this if you know other nodes do not rely on those packages:
   ```bash
   python -m pip uninstall -y groundingdino-py chumpy huggingface_hub
   python -m pip cache purge
