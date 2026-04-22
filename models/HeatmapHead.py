@@ -15,12 +15,13 @@ from types import SimpleNamespace
 import numpy as np
 from torch import nn
 
+_mmpose_import_error = None
+
 try:
     from mmpose.registry import MODELS
-except ImportError as _mmpose_import_error:
+except ImportError as exc:
     MODELS = None
-else:
-    _mmpose_import_error = None
+    _mmpose_import_error = exc
 
 
 def _build_head_cfg(mode="body"):
