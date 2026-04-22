@@ -162,8 +162,10 @@ YOLO_DET_URL   = f"https://github.com/ultralytics/assets/releases/download/v8.3.
 DWPOSE_HF_REPO   = "yzd-v/DWPose"
 DWPOSE_POSE_FILE = "dw-ll_ucoco_384.onnx"
 DWPOSE_DET_FILE  = "yolox_l.onnx"
-# Direct resolve URLs keep install-time dependencies minimal. If the upstream Hub
-# layout changes, users can still place the same filenames into IBB_POSE_MODEL_DIR.
+# Direct resolve URLs with HuggingFace's `?download=true` parameter keep
+# install-time dependencies minimal by avoiding the `huggingface_hub` SDK. If the
+# upstream Hub layout changes, users can still place the same filenames into
+# IBB_POSE_MODEL_DIR.
 DWPOSE_MODEL_URLS = {
     DWPOSE_POSE_FILE: f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_POSE_FILE}?download=true",
     DWPOSE_DET_FILE:  f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_DET_FILE}?download=true",
@@ -730,8 +732,6 @@ class IBBLoadPoseModel:
                         raise RuntimeError("CUDAExecutionProvider unavailable")
                 except Exception:
                     print("IBB_POSE: ONNX CUDAExecutionProvider unavailable – using CPU.")
-                else:
-                    providers = cuda_prov
 
             print(f"IBB_POSE: Loading DWPose ONNX | providers: {providers}")
             det_session  = ort.InferenceSession(det_path,  providers=providers)
