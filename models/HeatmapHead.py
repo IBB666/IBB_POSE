@@ -97,6 +97,8 @@ class _FallbackUDPHeatmap:
             if 0 < y < height - 1:
                 ys[idx] += np.sign(heatmaps[idx, y + 1, x] - heatmaps[idx, y - 1, x]) * 0.25
 
+        # Match MMPose UDPHeatmap decoding, which maps heatmap coordinates from
+        # the [0, W-1] / [0, H-1] grid back into input image space.
         scale = self.input_size / np.maximum(self.heatmap_size - 1.0, 1.0)
         keypoints = np.stack((xs, ys), axis=-1) * scale
 
@@ -269,7 +271,7 @@ class _FallbackHeatmapHead(nn.Module):
                         idx = int(key_parts[1])
                     except ValueError as exc:
                         raise RuntimeError(
-                            f"Incompatible decoder checkpoint key: {key!r}. "
+                            f"Incompatible state_dict key: {key!r}. "
                             "Expected a numeric final_layer index."
                         ) from exc
                     num_conv_layers = len(self.conv_layers) if isinstance(self.conv_layers, nn.Sequential) else 0
