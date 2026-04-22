@@ -31,6 +31,7 @@ Thumbs.db
 *.pth
 *.onnx
 *.safetensors
+!empty_text_encoder/empty_embedding.safetensors
 
 # Output files
 output/
