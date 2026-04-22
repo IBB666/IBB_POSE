@@ -2,7 +2,6 @@ import warnings
 import logging
 import colorsys
 import os
-import urllib.request
 
 # Suppress common warnings to reduce noise
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -226,6 +225,8 @@ def _hand_edge_color(edge_index: int) -> tuple[int, int, int]:
 
 
 def _download_file(url: str, dest: str) -> None:
+    import urllib.request
+
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     print(f"IBB_POSE: Downloading {os.path.basename(dest)} ...")
     try:
