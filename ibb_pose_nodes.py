@@ -55,7 +55,10 @@ except Exception as _e:
             return _TorchDeviceStub(device_type)
 
     torch = _TorchStub()
-    print(f"IBB_POSE: torch not available ({_e}). Importing in limited mode.")
+    print(
+        f"IBB_POSE: torch not available ({_e}). "
+        "Importing in limited mode only; runtime execution is disabled until torch is installed."
+    )
 
 import numpy as np
 import cv2
@@ -144,7 +147,8 @@ YOLO_POSE_FNAMES = {
     "medium": "yolo11m-pose.pt",
     "large":  "yolo11x-pose.pt",
 }
-YOLO_DET_URL   = "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt"
+YOLO_DET_FNAME = "yolo11n.pt"
+YOLO_DET_URL   = f"https://github.com/ultralytics/assets/releases/download/v8.3.0/{YOLO_DET_FNAME}"
 DWPOSE_HF_REPO   = "yzd-v/DWPose"
 DWPOSE_POSE_FILE = "dw-ll_ucoco_384.onnx"
 DWPOSE_DET_FILE  = "yolox_l.onnx"
@@ -205,8 +209,7 @@ def _ensure_yolo_pose_model(model_size: str, auto_download: bool) -> str:
 
 
 def _ensure_yolo_det_model(auto_download: bool) -> str:
-    fname = "yolo11n.pt"
-    local = os.path.join(IBB_POSE_MODEL_DIR, fname)
+    local = os.path.join(IBB_POSE_MODEL_DIR, YOLO_DET_FNAME)
     if not os.path.exists(local):
         if not auto_download:
             raise FileNotFoundError(
