@@ -111,51 +111,33 @@ Runs pose estimation on one or more images.
 
 ### `IBB Pose — JSON to Image`
 
-Renders an OpenPose JSON string to a pose visualisation image.
+## 模型目录
 
----
+- SDPose 模型：`ComfyUI/models/IBB_POSE/`
+- YOLO 模型：`ComfyUI/models/yolo/`
+- GroundingDINO 模型：`ComfyUI/models/grounding-dino/`
 
-## JSON Format
+首次运行时会自动下载以下资源：
 
-Output follows the standard OpenPose JSON format:
+- `teemosliang/SDPose-Body`
+- `teemosliang/SDPose-Wholebody`
+- GroundingDINO 配置和权重
 
-```json
-{
-  "people": [
-    {
-      "pose_keypoints_2d":       [x, y, score, ...],
-      "face_keypoints_2d":       [...],
-      "hand_left_keypoints_2d":  [...],
-      "hand_right_keypoints_2d": [...],
-      "foot_keypoints_2d":       [...]
-    }
-  ],
-  "canvas_width":  512,
-  "canvas_height": 768
-}
-```
+仓库已内置 `empty_text_encoder/empty_embedding.safetensors`，也保留了 `generate_empty_embedding.py` 以便重新生成。
 
-Compatible with [ComfyUI-OpenPose-Editor](https://github.com/judian17/ComfyUI-OpenPose-Editor-jd).
+## 工作流
 
----
+示例工作流位于：
 
-## Skeleton Keypoint Layout
+- `/workflow/ibb_pose.json`
 
-### Body / OpenPose (18 pts)
-OpenPose-18: nose · neck · shoulders · elbows · wrists · hips · knees · ankles · eyes · ears
+## 兼容说明
 
-### WholeBody (133 pts, DWPose)
-- 0–16: Body (COCO-17)
-- 17–22: Feet (6)
-- 23–90: Face (68)
-- 91–111: Left hand (21)
-- 112–132: Right hand (21)
+- 依赖 ComfyUI 的 `folder_paths` / `model_management`
+- Florence2 检测为可选能力，需要额外安装对应 ComfyUI 节点
+- OpenPose 编辑 JSON 可与 [ComfyUI-OpenPose-Editor-jd](https://github.com/judian17/ComfyUI-OpenPose-Editor-jd) 配合使用
 
----
+## 致谢
 
-## Recommended Workflow
-
-```
-Load Image → IBB Pose Load Model → IBB Pose Run Estimation → Preview Image
-                                                            └→ Save Text (JSON)
-```
+- 上游实现：`judian17/ComfyUI-SDPose-OOD`
+- 原始项目：`T-S-Liang/SDPose-OOD`
