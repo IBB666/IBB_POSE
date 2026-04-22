@@ -1,5 +1,7 @@
 import warnings
 import logging
+import os
+import urllib.request
 
 # Suppress common warnings to reduce noise
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -109,7 +111,6 @@ except ImportError:
             os.makedirs(full_output_folder, exist_ok=True)
             return full_output_folder, base_filename, 0, subfolder, filename_prefix
     folder_paths = MockFolderPaths()
-from huggingface_hub import snapshot_download
 import sys
 from pathlib import Path
 import glob
@@ -139,12 +140,15 @@ try:
         warnings.simplefilter("ignore")
         from ultralytics import YOLO as _YOLO
     ULTRALYTICS_AVAILABLE = True
+    YOLO = _YOLO
 except Exception as _e:
     ULTRALYTICS_AVAILABLE = False
+    YOLO = None
     print(
         f"IBB_POSE: ultralytics not available ({_exc_summary(_e)}). "
         "Body/OpenPose mode disabled."
     )
+YOLO_AVAILABLE = ULTRALYTICS_AVAILABLE
 
 try:
     import onnxruntime as ort
@@ -157,6 +161,7 @@ except Exception as _e:
     )
 
 # --- Add custom folder paths to ComfyUI ---
+EMPTY_EMBED_DIR = str(Path(__file__).resolve().parent / "empty_text_encoder")
 SDPOSE_MODEL_DIR = os.path.join(folder_paths.models_dir, "IBB_POSE")
 YOLO_MODEL_DIR = os.path.join(folder_paths.models_dir, "yolo")
 
@@ -834,6 +839,13 @@ class IBBPoseModelLoader:
         return os.path.join(SDPOSE_MODEL_DIR, repo_name)
 
     def load_pose_model(self, model_type, unet_precision, device, unload_on_finish):
+        from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
+        from huggingface_hub import snapshot_download
+        from safetensors.torch import load_file
+
+        from .models.HeatmapHead import get_heatmap_head
+        from .models.ModifiedUNet import Modified_forward
+
         repo_id = {
             "Body": "teemosliang/SDPose-Body",
             "WholeBody": "teemosliang/SDPose-Wholebody"
@@ -844,8 +856,6 @@ class IBBPoseModelLoader:
         if not os.path.exists(os.path.join(model_path, "unet")):
             print(f"IBB_POSE: Downloading model from {repo_id} to {model_path}")
             snapshot_download(repo_id=repo_id, local_dir=model_path, local_dir_use_symlinks=False)
-
-    def load_model(self, skeleton_type, model_size, device, precision, auto_download):
         if not TORCH_AVAILABLE:
             raise ImportError(
                 "IBB_POSE: torch is required to run the node. "
@@ -857,32 +867,31 @@ class IBBPoseModelLoader:
         else:
             device = torch.device(device)
 
-        # --- Precision Handling ---
         dtype = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}[unet_precision]
-        if device.type == 'cpu' and dtype == torch.float16:
-            print("IBB_POSE Warning: FP16 is not supported on CPU. Falling back to FP32.")
+        if device.type == "cpu" and dtype != torch.float32:
+            print("IBB_POSE Warning: FP16/BF16 is not supported on CPU. Falling back to FP32.")
             dtype = torch.float32
 
         print(f"IBB_POSE: Loading model on device: {device} with UNet precision: {unet_precision}")
-        
-        # --- Load Empty Embedding ---
+
         embed_path = os.path.join(EMPTY_EMBED_DIR, "empty_embedding.safetensors")
         if not os.path.exists(embed_path):
-            raise FileNotFoundError(f"Empty embedding not found at '{embed_path}'. Please run 'generate_empty_embedding.py' script first.")
+            raise FileNotFoundError(
+                f"Empty embedding not found at '{embed_path}'. Please run 'generate_empty_embedding.py' first."
+            )
         empty_text_embed = load_file(embed_path)["empty_text_embed"].to(device)
 
-        # --- Load Models ---
         unet = UNet2DConditionModel.from_pretrained(model_path, subfolder="unet", torch_dtype=dtype).to(device)
         unet = Modified_forward(unet, keypoint_scheme=keypoint_scheme)
-        vae = AutoencoderKL.from_pretrained(model_path, subfolder='vae').to(device) # VAE is small, keep fp32
-        
+        vae = AutoencoderKL.from_pretrained(model_path, subfolder="vae").to(device)
+
         dec_path = os.path.join(model_path, "decoder", "decoder.safetensors")
         hm_decoder = get_heatmap_head(mode=keypoint_scheme).to(device)
         if os.path.exists(dec_path):
             hm_decoder.load_state_dict(load_file(dec_path, device=str(device)), strict=True)
         hm_decoder = hm_decoder.to(dtype)
-        
-        noise_scheduler = DDPMScheduler.from_pretrained(model_path, subfolder='scheduler')
+
+        noise_scheduler = DDPMScheduler.from_pretrained(model_path, subfolder="scheduler")
 
         sdpose_model = {
             "unet": unet,
@@ -892,13 +901,12 @@ class IBBPoseModelLoader:
             "scheduler": noise_scheduler,
             "keypoint_scheme": keypoint_scheme,
             "device": device,
-            "unload_on_finish": unload_on_finish
+            "unload_on_finish": unload_on_finish,
         }
         return (sdpose_model,)
 
 
 # --- GroundingDINO Model Loader (Adapted from SAM2 Node) ---
-# (global groundingdino_model_list definition)
 groundingdino_model_dir_name = "grounding-dino"
 groundingdino_model_list = {
     "GroundingDINO_SwinT_OGC (694MB)": {
@@ -911,81 +919,41 @@ groundingdino_model_list = {
     },
 }
 
-        if skeleton_type in ("Body", "OpenPose"):
-            if not ULTRALYTICS_AVAILABLE:
-                raise ImportError(
-                    "IBB_POSE: ultralytics required for Body/OpenPose.\n"
-                    "  Install: pip install ultralytics"
-                )
-            model_path = _ensure_yolo_pose_model(model_size, auto_download)
-            print(f"IBB_POSE: Loading YOLO pose model -> {model_path}")
-            yolo = _YOLO(model_path)
-            model_info["backend"]   = "yolo_pose"
-            model_info["yolo_pose"] = yolo
-            try:
-                det_path = _ensure_yolo_det_model(auto_download)
-                model_info["yolo_det"] = _YOLO(det_path)
-            except Exception as exc:
-                print(f"IBB_POSE: YOLO detector load failed ({exc}). Multi-person via pose model.")
-                model_info["yolo_det"] = None
 
-        else:  # WholeBody
-            if not ONNXRUNTIME_AVAILABLE:
-                raise ImportError(
-                    "IBB_POSE: onnxruntime required for WholeBody.\n"
-                    "  Install: pip install onnxruntime  (or onnxruntime-gpu)"
-                )
-            det_path, pose_path = _ensure_dwpose_models(auto_download)
-
-            providers = ["CPUExecutionProvider"]
-            if dev.type != "cpu":
-                cuda_prov = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-                try:
-                    available = set(ort.get_available_providers())
-                    if "CUDAExecutionProvider" in available:
-                        providers = cuda_prov
-                    else:
-                        raise RuntimeError("CUDAExecutionProvider unavailable")
-                except Exception:
-                    print("IBB_POSE: ONNX CUDAExecutionProvider unavailable – using CPU.")
-
-            print(f"IBB_POSE: Loading DWPose ONNX | providers: {providers}")
-            det_session  = ort.InferenceSession(det_path,  providers=providers)
-            pose_session = ort.InferenceSession(pose_path, providers=providers)
-            print("IBB_POSE: WholeBody detector backend -> YOLOX ONNX.")
-
-            model_info["backend"]      = "dwpose_onnx"
-            model_info["det_session"]  = det_session
-            model_info["pose_session"] = pose_session
-
-            if ULTRALYTICS_AVAILABLE:
-                try:
-                    det_yolo_path = _ensure_yolo_det_model(auto_download)
-                    model_info["yolo_det"] = _YOLO(det_yolo_path)
-                except Exception as exc:
-                    print(f"IBB_POSE: YOLO det unavailable ({exc}). Falling back to YOLOX.")
-                    model_info["yolo_det"] = None
-            else:
-                model_info["yolo_det"] = None
-
-        print(f"IBB_POSE: Model ready. skeleton={skeleton_type} device={dev} dtype={dtype}")
-        return (model_info,)
+def list_groundingdino_model():
+    return list(groundingdino_model_list.keys())
 
 
-    if dino_model_args.text_encoder_type == "bert-base-uncased":
-        dino_model_args.text_encoder_type = get_bert_base_uncased_model_path()
+def get_local_filepath(url, folder_name):
+    folder = os.path.join(folder_paths.models_dir, folder_name)
+    os.makedirs(folder, exist_ok=True)
+    filename = os.path.basename(url.split("?", 1)[0])
+    local_path = os.path.join(folder, filename)
+    if not os.path.exists(local_path):
+        _download_file(url, local_path)
+    return local_path
 
-    dino = local_groundingdino_build_model(dino_model_args)
-    checkpoint = torch.load(
-        get_local_filepath(
-            groundingdino_model_list[model_name]["model_url"],
-            groundingdino_model_dir_name,
-        ), map_location="cpu" # Load to CPU first
-    )
-    dino.load_state_dict(
-        local_groundingdino_clean_state_dict(checkpoint["model"]), strict=False
-    )
-    # Don't move to device here, let the Processor node handle it if needed
+
+def load_groundingdino_model(model_name):
+    try:
+        from groundingdino.models import build_model
+        from groundingdino.util.slconfig import SLConfig
+        from groundingdino.util.utils import clean_state_dict
+    except ImportError as exc:
+        raise ImportError(
+            "IBB_POSE: Failed to import 'groundingdino'. Please install it via pip: 'pip install groundingdino-py'"
+        ) from exc
+
+    if model_name not in groundingdino_model_list:
+        raise ValueError(f"IBB_POSE: Unknown GroundingDINO model: {model_name}")
+
+    config_path = get_local_filepath(groundingdino_model_list[model_name]["config_url"], groundingdino_model_dir_name)
+    model_path = get_local_filepath(groundingdino_model_list[model_name]["model_url"], groundingdino_model_dir_name)
+
+    dino_model_args = SLConfig.fromfile(config_path)
+    dino = build_model(dino_model_args)
+    checkpoint = torch.load(model_path, map_location="cpu")
+    dino.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     dino.eval()
     return dino
 
