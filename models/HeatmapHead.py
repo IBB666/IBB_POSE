@@ -13,7 +13,6 @@ import warnings
 from types import SimpleNamespace
 
 import numpy as np
-import torch
 from torch import nn
 
 try:
@@ -125,7 +124,15 @@ class _FallbackHeatmapHead(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.loss_module = None
-        self.decoder = _FallbackUDPHeatmap(**decoder) if decoder is not None else None
+        self.decoder = (
+            _FallbackUDPHeatmap(
+                input_size=decoder["input_size"],
+                heatmap_size=decoder["heatmap_size"],
+                sigma=decoder.get("sigma", 2.0),
+            )
+            if decoder is not None
+            else None
+        )
 
         if deconv_out_channels:
             self.deconv_layers = self._make_deconv_layers(
