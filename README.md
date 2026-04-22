@@ -56,6 +56,7 @@ Inspired by [SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD).
   python -m pip cache purge
   ```
 - The node now keeps heavy pose backends optional and only imports them when the selected mode needs them.
+- The ComfyUI runtime no longer needs the OpenMMLab stack just to load the SDPose decoder. `mmpose` / `mmcv` / `mmengine` are only needed for the standalone evaluation scripts under `/eval`.
 
 ### Manual model placement
 
