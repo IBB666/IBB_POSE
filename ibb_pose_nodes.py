@@ -10,23 +10,49 @@ warnings.filterwarnings("ignore", message=".*Redirects are currently not support
 logging.getLogger("torch.distributed").setLevel(logging.ERROR)
 logging.getLogger("deepspeed").setLevel(logging.ERROR)
 
-# Environment detection
-IS_COMFYUI_ENV = False
-try:
-    import comfy
-    IS_COMFYUI_ENV = True
-except ImportError:
-    pass
+def _exc_summary(exc: Exception) -> str:
+    return f"{exc.__class__.__name__}: {exc}"
 
-# Additional warning suppression for specific environments
-if IS_COMFYUI_ENV:
-    # In ComfyUI environment, suppress more warnings
-    logging.getLogger("transformers").setLevel(logging.ERROR)
-    logging.getLogger("diffusers").setLevel(logging.ERROR)
-import os
-import gc
-import re
-import torch
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except Exception as _e:
+    TORCH_AVAILABLE = False
+
+    class _TorchCudaStub:
+        @staticmethod
+        def is_available():
+            return False
+
+        @staticmethod
+        def empty_cache():
+            return None
+
+    class _TorchDeviceStub:
+        def __init__(self, device_type):
+            self.type = str(device_type)
+
+        def __str__(self):
+            return self.type
+
+    class _TorchStub:
+        Tensor = object
+        float32 = "float32"
+        float16 = "float16"
+        bfloat16 = "bfloat16"
+        cuda = _TorchCudaStub()
+
+        @staticmethod
+        def device(device_type):
+            return _TorchDeviceStub(device_type)
+
+    torch = _TorchStub()
+    print(
+        f"IBB_POSE: torch not available ({_exc_summary(_e)}). "
+        "Importing in limited mode only; runtime execution is disabled until torch is installed."
+    )
+
 import numpy as np
 from PIL import Image
 import json
@@ -107,42 +133,28 @@ except ImportError:
     model_management = MockModelManagement()
 
 
-# --- Imports from the original SDPose project ---
-# --- Imports from the original SDPose project ---
-from diffusers import DDPMScheduler, AutoencoderKL, UNet2DConditionModel
-from transformers import CLIPTokenizer, CLIPTextModel
-
-package_path = str(Path(__file__).parent)
-if package_path not in sys.path:
-    sys.path.insert(0, package_path)
-
+# Optional dependencies
 try:
-    from .models.HeatmapHead import get_heatmap_head
-    from .models.ModifiedUNet import Modified_forward
-    from .pipelines.SDPose_D_Pipeline import SDPose_D_Pipeline
-except ImportError as e:
-    print("="*50)
-    print("IBB_POSE: CRITICAL ERROR")
-    print("Failed to import internal modules (e.g., models.HeatmapHead).")
-    print("This *almost always* means the 'models', 'pipelines', or 'mmpose' sub-folders are missing or installed incorrectly.")
-    print("Please ensure the node was installed completely (including all sub-folders).")
-    print(f"Original error: {e}")
-    print("="*50)
-    raise e
-from safetensors.torch import load_file
-
-try:
-    # Temporarily suppress ultralytics warnings during import
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
-    print("IBB_POSE: ultralytics library not found. YOLO detection will be disabled.")
-except Exception as e:
-    YOLO_AVAILABLE = False
-    print(f"IBB_POSE: Failed to import ultralytics: {e}. YOLO detection will be disabled.")
+        from ultralytics import YOLO as _YOLO
+    ULTRALYTICS_AVAILABLE = True
+except Exception as _e:
+    ULTRALYTICS_AVAILABLE = False
+    print(
+        f"IBB_POSE: ultralytics not available ({_exc_summary(_e)}). "
+        "Body/OpenPose mode disabled."
+    )
+
+try:
+    import onnxruntime as ort
+    ONNXRUNTIME_AVAILABLE = True
+except Exception as _e:
+    ONNXRUNTIME_AVAILABLE = False
+    print(
+        f"IBB_POSE: onnxruntime not available ({_exc_summary(_e)}). "
+        "WholeBody mode disabled."
+    )
 
 # --- Add custom folder paths to ComfyUI ---
 SDPOSE_MODEL_DIR = os.path.join(folder_paths.models_dir, "IBB_POSE")
@@ -154,75 +166,213 @@ try:
 except Exception:
     pass
 
-os.makedirs(SDPOSE_MODEL_DIR, exist_ok=True)
-os.makedirs(YOLO_MODEL_DIR, exist_ok=True)
+# Model download URLs
+YOLO_POSE_URLS = {
+    "small":  "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-pose.pt",
+    "medium": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11m-pose.pt",
+    "large":  "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-pose.pt",
+}
+YOLO_POSE_FNAMES = {
+    "small":  "yolo11n-pose.pt",
+    "medium": "yolo11m-pose.pt",
+    "large":  "yolo11x-pose.pt",
+}
+YOLO_DET_FNAME = "yolo11n.pt"
+YOLO_DET_URL   = f"https://github.com/ultralytics/assets/releases/download/v8.3.0/{YOLO_DET_FNAME}"
+DWPOSE_HF_REPO   = "yzd-v/DWPose"
+DWPOSE_POSE_FILE = "dw-ll_ucoco_384.onnx"
+DWPOSE_DET_FILE  = "yolox_l.onnx"
+# Direct resolve URLs with HuggingFace's `?download=true` parameter keep
+# install-time dependencies minimal by avoiding the `huggingface_hub` SDK. If the
+# upstream Hub layout changes, users can still place the same filenames into
+# IBB_POSE_MODEL_DIR.
+DWPOSE_MODEL_URLS = {
+    DWPOSE_POSE_FILE: f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_POSE_FILE}?download=true",
+    DWPOSE_DET_FILE:  f"https://huggingface.co/{DWPOSE_HF_REPO}/resolve/main/{DWPOSE_DET_FILE}?download=true",
+}
 
-# --- Define path for the local empty embedding ---
-NODE_DIR = Path(__file__).parent
-EMPTY_EMBED_DIR = os.path.join(NODE_DIR, "empty_text_encoder")
-os.makedirs(EMPTY_EMBED_DIR, exist_ok=True)
+# Keypoint constants
+# COCO-17 -> OpenPose-18 index map (-1 = computed Neck)
+COCO_TO_OP = [0, -1, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3]
 
-# --- Helper functions for tensor/image conversion ---
-def tensor_to_pil(tensor):
-    """Converts a torch tensor (CHW, float32, 0-1) to a PIL Image (RGB)."""
-    return Image.fromarray((tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8))
+# OpenPose-18 limb pairs (1-indexed)
+OPENPOSE_LIMB_SEQ = [
+    [2, 3], [2, 6], [3, 4], [4, 5], [6, 7], [7, 8],
+    [2, 9], [9, 10], [10, 11], [2, 12], [12, 13], [13, 14],
+    [2, 1], [1, 15], [15, 17], [1, 16], [16, 18],
+]
 
-def pil_to_tensor(image):
-    """Converts a PIL Image (RGB) to a torch tensor (BCHW, float32, 0-1)."""
-    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
+BODY_COLORS = [
+    [255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0],
+    [170, 255, 0], [85, 255, 0], [0, 255, 0], [0, 255, 85],
+    [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255],
+    [0, 0, 255], [85, 0, 255], [170, 0, 255], [255, 0, 255],
+    [255, 0, 170], [255, 0, 85],
+]
 
-def numpy_to_tensor(img_np):
-    """Converts a numpy array (HWC, uint8, 0-255) to a torch tensor (BCHW, float32, 0-1)."""
-    return torch.from_numpy(img_np.astype(np.float32) / 255.0).unsqueeze(0)
+HAND_EDGES = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [0, 9], [9, 10], [10, 11], [11, 12],
+    [0, 13], [13, 14], [14, 15], [15, 16],
+    [0, 17], [17, 18], [18, 19], [19, 20],
+]
 
-# --- Drawing functions (copied from SDPose_gradio.py) ---
-# (Functions draw_body17_keypoints_openpose_style and draw_wholebody_keypoints_openpose_style are omitted for brevity but would be pasted here)
-# --- Drawing functions ---
 
-def draw_body17_keypoints_openpose_style(canvas, keypoints, scores=None, threshold=0.3, overlay_mode=False, overlay_alpha=0.6, scale_for_xinsr=False, pose_scale=1.0):
-    H, W, C = canvas.shape
-    if len(keypoints) >= 7:
-        neck = (keypoints[5] + keypoints[6]) / 2
-        neck_score = min(scores[5], scores[6]) if scores is not None else 1.0
-        candidate = np.zeros((18, 2))
-        candidate_scores = np.zeros(18)
-        candidate[0] = keypoints[0]; candidate[1] = neck; candidate[2] = keypoints[6]; candidate[3] = keypoints[8]; candidate[4] = keypoints[10]; candidate[5] = keypoints[5]; candidate[6] = keypoints[7]; candidate[7] = keypoints[9]; candidate[8] = keypoints[12]; candidate[9] = keypoints[14]; candidate[10] = keypoints[16]; candidate[11] = keypoints[11]; candidate[12] = keypoints[13]; candidate[13] = keypoints[15]; candidate[14] = keypoints[2]; candidate[15] = keypoints[1]; candidate[16] = keypoints[4]; candidate[17] = keypoints[3]
-        if scores is not None:
-             candidate_scores[0] = scores[0]; candidate_scores[1] = neck_score; candidate_scores[2] = scores[6]; candidate_scores[3] = scores[8]; candidate_scores[4] = scores[10]; candidate_scores[5] = scores[5]; candidate_scores[6] = scores[7]; candidate_scores[7] = scores[9]; candidate_scores[8] = scores[12]; candidate_scores[9] = scores[14]; candidate_scores[10] = scores[16]; candidate_scores[11] = scores[11]; candidate_scores[12] = scores[13]; candidate_scores[13] = scores[15]; candidate_scores[14] = scores[2]; candidate_scores[15] = scores[1]; candidate_scores[16] = scores[4]; candidate_scores[17] = scores[3]
-    else: return canvas
+def _download_file(url: str, dest: str) -> None:
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    print(f"IBB_POSE: Downloading {os.path.basename(dest)} ...")
+    try:
+        urllib.request.urlretrieve(url, dest)
+        if not os.path.exists(dest) or os.path.getsize(dest) <= 0:
+            raise RuntimeError("download produced an empty file")
+        print(f"IBB_POSE: Saved -> {dest}")
+    except Exception as exc:
+        raise RuntimeError(f"IBB_POSE: Failed to download {url}: {exc}") from exc
 
-    # --- 动态计算粗细 ---
-    avg_size = (H + W) / 2
-    # 基础粗细基于图像尺寸，现在乘以用户自定义的 pose_scale
-    base_stickwidth = max(1, int((avg_size / 256) * pose_scale))
-    circle_radius = max(1, int((avg_size / 192) * pose_scale))
-    
-    stickwidth = base_stickwidth
 
-    # --- Xinsr Logic (Fixed Multiplier) ---
-    if scale_for_xinsr:
-        # 锁定倍率为 2，依赖 pose_scale 进行分辨率适配
-        xinsr_fixed_multiplier = 2
-        stickwidth = int(base_stickwidth * xinsr_fixed_multiplier)
+def _ensure_yolo_pose_model(model_size: str, auto_download: bool) -> str:
+    fname = YOLO_POSE_FNAMES[model_size]
+    local = os.path.join(IBB_POSE_MODEL_DIR, fname)
+    if not os.path.exists(local):
+        if not auto_download:
+            raise FileNotFoundError(
+                f"IBB_POSE: YOLO pose model not found at {local}. "
+                "Enable auto_download or place it manually."
+            )
+        _download_file(YOLO_POSE_URLS[model_size], local)
+    return local
 
-    limbSeq = [[2, 3], [2, 6], [3, 4], [4, 5], [6, 7], [7, 8], [2, 9], [9, 10], [10, 11], [2, 12], [12, 13], [13, 14], [2, 1], [1, 15], [15, 17], [1, 16], [16, 18]]
-    colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0], [0, 255, 0], [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255], [85, 0, 255], [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
-    
-    for i in range(len(limbSeq)):
-        index = np.array(limbSeq[i]) - 1
-        if index[0] >= len(candidate) or index[1] >= len(candidate): continue
-        if scores is not None and (candidate_scores[index[0]] < threshold or candidate_scores[index[1]] < threshold): continue
-        Y = candidate[index.astype(int), 0]; X = candidate[index.astype(int), 1]; mX = np.mean(X); mY = np.mean(Y)
-        length = ((X[0] - X[1]) ** 2 + (Y[0] - Y[1]) ** 2) ** 0.5
-        if length < 1: continue
-        angle = math.degrees(math.atan2(X[0] - X[1], Y[0] - Y[1]))
-        polygon = cv2.ellipse2Poly((int(mY), int(mX)), (int(length / 2), stickwidth), int(angle), 0, 360, 1)
-        cv2.fillConvexPoly(canvas, polygon, colors[i % len(colors)])
-    for i in range(18):
-        if scores is not None and candidate_scores[i] < threshold: continue
-        x, y = int(candidate[i][0]), int(candidate[i][1])
-        if x < 0 or y < 0 or x >= W or y >= H: continue
-        cv2.circle(canvas, (x, y), circle_radius, colors[i % len(colors)], thickness=-1)
+
+def _ensure_yolo_det_model(auto_download: bool) -> str:
+    local = os.path.join(IBB_POSE_MODEL_DIR, YOLO_DET_FNAME)
+    if not os.path.exists(local):
+        if not auto_download:
+            raise FileNotFoundError(
+                f"IBB_POSE: YOLO detection model not found at {local}."
+            )
+        _download_file(YOLO_DET_URL, local)
+    return local
+
+
+def _ensure_dwpose_models(auto_download: bool) -> tuple:
+    det_path  = os.path.join(IBB_POSE_MODEL_DIR, DWPOSE_DET_FILE)
+    pose_path = os.path.join(IBB_POSE_MODEL_DIR, DWPOSE_POSE_FILE)
+
+    for fpath, fname in [(det_path, DWPOSE_DET_FILE), (pose_path, DWPOSE_POSE_FILE)]:
+        if not os.path.exists(fpath):
+            if not auto_download:
+                raise FileNotFoundError(
+                    f"IBB_POSE: DWPose model {fname} not found at {fpath}. "
+                    "Enable auto_download or place manually."
+                )
+            try:
+                _download_file(DWPOSE_MODEL_URLS[fname], fpath)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"IBB_POSE: Could not download {fname} from HuggingFace: {exc}"
+                ) from exc
+
+    return det_path, pose_path
+
+
+def _tensor_to_bgr(tensor: torch.Tensor) -> np.ndarray:
+    img = tensor[0].cpu().numpy()
+    img = np.clip(img * 255, 0, 255).astype(np.uint8)
+    return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+
+def _bgr_to_tensor(img_bgr: np.ndarray) -> torch.Tensor:
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    return torch.from_numpy(img_rgb.astype(np.float32) / 255.0).unsqueeze(0)
+
+
+def _coco17_to_openpose18(kpts: np.ndarray, scores: np.ndarray) -> tuple:
+    op_kpts   = np.zeros((18, 2), dtype=np.float32)
+    op_scores = np.zeros(18, dtype=np.float32)
+
+    if len(kpts) >= 7:
+        neck       = (kpts[5] + kpts[6]) / 2.0
+        neck_score = float(min(scores[5], scores[6]))
+    else:
+        neck       = np.zeros(2, dtype=np.float32)
+        neck_score = 0.0
+
+    for i_op, i_coco in enumerate(COCO_TO_OP):
+        if i_op == 1:
+            op_kpts[i_op]   = neck
+            op_scores[i_op] = neck_score
+        elif 0 <= i_coco < len(kpts):
+            op_kpts[i_op]   = kpts[i_coco]
+            op_scores[i_op] = float(scores[i_coco])
+
+    return op_kpts, op_scores
+
+
+def _coco_wholebody_reorder(kpts: np.ndarray, scores: np.ndarray) -> tuple:
+    n = len(kpts)
+    out_kpts   = np.zeros((134, 2), dtype=np.float32)
+    out_scores = np.zeros(134, dtype=np.float32)
+
+    if n < 17:
+        return out_kpts, out_scores
+
+    body_k, body_s = _coco17_to_openpose18(kpts[:17], scores[:17])
+    out_kpts[0:18]   = body_k
+    out_scores[0:18] = body_s
+
+    if n >= 23:
+        out_kpts[18:24]   = kpts[17:23]
+        out_scores[18:24] = scores[17:23]
+
+    if n >= 91:
+        out_kpts[24:92]   = kpts[23:91]
+        out_scores[24:92] = scores[23:91]
+
+    if n >= 112:
+        out_kpts[92:113]   = kpts[91:112]
+        out_scores[92:113] = scores[91:112]
+
+    if n >= 133:
+        out_kpts[113:134]   = kpts[112:133]
+        out_scores[113:134] = scores[112:133]
+
+    return out_kpts, out_scores
+
+
+def _draw_body(canvas, op_kpts, op_scores, threshold=0.3, pose_scale=1.0):
+    H, W = canvas.shape[:2]
+    avg  = (H + W) / 2.0
+    sw   = max(1, int((avg / 256.0) * pose_scale))
+    cr   = max(1, int((avg / 192.0) * pose_scale))
+
+    for i, (a1, b1) in enumerate(OPENPOSE_LIMB_SEQ):
+        a, b = a1 - 1, b1 - 1
+        if a >= len(op_scores) or b >= len(op_scores):
+            continue
+        if op_scores[a] < threshold or op_scores[b] < threshold:
+            continue
+        ax, ay = float(op_kpts[a, 0]), float(op_kpts[a, 1])
+        bx, by = float(op_kpts[b, 0]), float(op_kpts[b, 1])
+        mX     = (ax + bx) / 2.0
+        mY     = (ay + by) / 2.0
+        length = math.hypot(ax - bx, ay - by)
+        if length < 1.0:
+            continue
+        angle   = math.degrees(math.atan2(ax - bx, ay - by))
+        half_l  = max(1, int(length / 2))
+        polygon = cv2.ellipse2Poly(
+            (int(mX), int(mY)), (half_l, sw), int(angle), 0, 360, 1
+        )
+        cv2.fillConvexPoly(canvas, polygon, BODY_COLORS[i % len(BODY_COLORS)])
+
+    for i in range(min(18, len(op_kpts))):
+        if op_scores[i] < threshold:
+            continue
+        x, y = int(op_kpts[i, 0]), int(op_kpts[i, 1])
+        if 0 <= x < W and 0 <= y < H:
+            cv2.circle(canvas, (x, y), cr, BODY_COLORS[i % len(BODY_COLORS)], -1)
+
     return canvas
 
 def draw_wholebody_keypoints_openpose_style(canvas, keypoints, scores=None, threshold=0.3, overlay_mode=False, overlay_alpha=0.6, scale_for_xinsr=False, pose_scale=1.0):
@@ -695,6 +845,13 @@ class IBBPoseModelLoader:
             print(f"IBB_POSE: Downloading model from {repo_id} to {model_path}")
             snapshot_download(repo_id=repo_id, local_dir=model_path, local_dir_use_symlinks=False)
 
+    def load_model(self, skeleton_type, model_size, device, precision, auto_download):
+        if not TORCH_AVAILABLE:
+            raise ImportError(
+                "IBB_POSE: torch is required to run the node. "
+                "Please launch it inside ComfyUI or install torch first."
+            )
+
         if device == "auto":
             device = model_management.get_torch_device()
         else:
@@ -754,73 +911,66 @@ groundingdino_model_list = {
     },
 }
 
-#
-def list_groundingdino_model():
-    return list(groundingdino_model_list.keys())
+        if skeleton_type in ("Body", "OpenPose"):
+            if not ULTRALYTICS_AVAILABLE:
+                raise ImportError(
+                    "IBB_POSE: ultralytics required for Body/OpenPose.\n"
+                    "  Install: pip install ultralytics"
+                )
+            model_path = _ensure_yolo_pose_model(model_size, auto_download)
+            print(f"IBB_POSE: Loading YOLO pose model -> {model_path}")
+            yolo = _YOLO(model_path)
+            model_info["backend"]   = "yolo_pose"
+            model_info["yolo_pose"] = yolo
+            try:
+                det_path = _ensure_yolo_det_model(auto_download)
+                model_info["yolo_det"] = _YOLO(det_path)
+            except Exception as exc:
+                print(f"IBB_POSE: YOLO detector load failed ({exc}). Multi-person via pose model.")
+                model_info["yolo_det"] = None
 
-#
-def get_bert_base_uncased_model_path():
-    # Reuse ComfyUI's standard CLIP model directory structure if available
-    clip_model_base = os.path.join(folder_paths.models_dir, "clip")
-    bert_path = os.path.join(clip_model_base, "bert-base-uncased")
-    if os.path.exists(bert_path) and os.path.isdir(bert_path):
-         # Check specifically for pytorch_model.bin or model.safetensors
-         has_bin = os.path.exists(os.path.join(bert_path, "pytorch_model.bin"))
-         has_safe = os.path.exists(os.path.join(bert_path, "model.safetensors"))
-         if has_bin or has_safe:
-             print("IBB_POSE (GroundingDINO): Using bert-base-uncased from models/clip folder")
-             return bert_path
-             
-    # Fallback for ComfyUI < 1.14 or custom bert model path
-    comfy_bert_model_base = os.path.join(folder_paths.models_dir, "bert-base-uncased")
-    if glob.glob(os.path.join(comfy_bert_model_base, "**/model.safetensors"), recursive=True) or \
-       glob.glob(os.path.join(comfy_bert_model_base, "**/pytorch_model.bin"), recursive=True):
-        print("IBB_POSE (GroundingDINO): Using models/bert-base-uncased")
-        return comfy_bert_model_base
-        
-    print("IBB_POSE (GroundingDINO): Using HuggingFace Hub for bert-base-uncased")
-    return "bert-base-uncased" # Default fallback to HF Hub download
+        else:  # WholeBody
+            if not ONNXRUNTIME_AVAILABLE:
+                raise ImportError(
+                    "IBB_POSE: onnxruntime required for WholeBody.\n"
+                    "  Install: pip install onnxruntime  (or onnxruntime-gpu)"
+                )
+            det_path, pose_path = _ensure_dwpose_models(auto_download)
 
-#
-def get_local_filepath(url, dirname, local_file_name=None):
-    if not local_file_name:
-        from urllib.parse import urlparse # Local import
-        parsed_url = urlparse(url)
-        local_file_name = os.path.basename(parsed_url.path)
+            providers = ["CPUExecutionProvider"]
+            if dev.type != "cpu":
+                cuda_prov = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+                try:
+                    available = set(ort.get_available_providers())
+                    if "CUDAExecutionProvider" in available:
+                        providers = cuda_prov
+                    else:
+                        raise RuntimeError("CUDAExecutionProvider unavailable")
+                except Exception:
+                    print("IBB_POSE: ONNX CUDAExecutionProvider unavailable – using CPU.")
 
-    destination = folder_paths.get_full_path(dirname, local_file_name)
-    if destination and os.path.exists(destination): # Check existence
-        # print(f"IBB_POSE: Using extra model path: {destination}") # Reduce noise
-        return destination
+            print(f"IBB_POSE: Loading DWPose ONNX | providers: {providers}")
+            det_session  = ort.InferenceSession(det_path,  providers=providers)
+            pose_session = ort.InferenceSession(pose_path, providers=providers)
+            print("IBB_POSE: WholeBody detector backend -> YOLOX ONNX.")
 
-    folder = os.path.join(folder_paths.models_dir, dirname)
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+            model_info["backend"]      = "dwpose_onnx"
+            model_info["det_session"]  = det_session
+            model_info["pose_session"] = pose_session
 
-    destination = os.path.join(folder, local_file_name)
-    if not os.path.exists(destination):
-        from torch.hub import download_url_to_file # Local import
-        print(f"IBB_POSE: Downloading {url} to {destination}")
-        download_url_to_file(url, destination)
-    return destination
+            if ULTRALYTICS_AVAILABLE:
+                try:
+                    det_yolo_path = _ensure_yolo_det_model(auto_download)
+                    model_info["yolo_det"] = _YOLO(det_yolo_path)
+                except Exception as exc:
+                    print(f"IBB_POSE: YOLO det unavailable ({exc}). Falling back to YOLOX.")
+                    model_info["yolo_det"] = None
+            else:
+                model_info["yolo_det"] = None
 
-# (modified for SDPose context)
-def load_groundingdino_model(model_name):
-    # Need imports from local_groundingdino here
-    try:
-        from groundingdino.util.slconfig import SLConfig as local_groundingdino_SLConfig
-        from groundingdino.models import build_model as local_groundingdino_build_model
-        from groundingdino.util.utils import clean_state_dict as local_groundingdino_clean_state_dict
-        import glob # For checking bert path
-    except ImportError:
-        raise ImportError("IBB_POSE: Failed to import 'groundingdino'. Please install it via pip: 'pip install groundingdino-py'")
+        print(f"IBB_POSE: Model ready. skeleton={skeleton_type} device={dev} dtype={dtype}")
+        return (model_info,)
 
-    dino_model_args = local_groundingdino_SLConfig.fromfile(
-        get_local_filepath(
-            groundingdino_model_list[model_name]["config_url"],
-            groundingdino_model_dir_name,
-        ),
-    )
 
     if dino_model_args.text_encoder_type == "bert-base-uncased":
         dino_model_args.text_encoder_type = get_bert_base_uncased_model_path()

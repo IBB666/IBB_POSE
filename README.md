@@ -1,34 +1,115 @@
-# IBB_POSE
+# IBB_POSE — ComfyUI Pose Estimation Node
 
-IBB_POSE 是对 [judian17/ComfyUI-SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD) 的 IBB 命名复刻版，保留原仓库的核心节点能力，并统一节点分类/显示名为 `IBB_POSE`。
+A ComfyUI custom node for robust human pose estimation.  
+Inspired by [SDPose-OOD](https://github.com/judian17/ComfyUI-SDPose-OOD).
 
-## 功能
+**Compatibility**: Python 3.13 · torch 2.10+ · CUDA 12/13 · ComfyUI Portable
 
-- `IBB Pose — Load Model`
-  - 加载 SDPose Body / WholeBody 模型
-  - 支持 `fp32 / fp16 / bf16`
-  - 支持自动下载 Hugging Face 模型
-- `IBB Pose — Run SDPose Estimation`
-  - 单图/批量姿态估计
-  - 支持全图、YOLO、Florence2、GroundingDINO 四种检测来源
-  - 支持 Body(17) / WholeBody(133)
-  - 支持 `keep_face / keep_hands / keep_feet`
-  - 支持 `pose_scale_factor`、`scale_for_xinsr`
-  - 支持输出 OpenPose 风格 `POSE_KEYPOINT`
-  - 支持保存可导入 OpenPose Editor 的 JSON
-- `IBB Pose — Load YOLO Model`
-  - 加载 ComfyUI `models/yolo` 下的 YOLO 模型
-- `IBB Pose — Load GroundingDINO Model`
-  - 自动下载并加载 GroundingDINO 模型
+---
 
-## 安装
+## Features
 
-```bash
-cd ComfyUI/custom_nodes
-git clone https://github.com/IBB666/IBB_POSE.git
-cd IBB_POSE
-pip install -r requirements.txt
-```
+| Feature | Details |
+|---|---|
+| **Skeleton types** | Body (17 kpts COCO), OpenPose (18 kpts), WholeBody (133 kpts) |
+| **Detection modes** | Single person · Multi-person |
+| **Output** | Pose image · OpenPose JSON · Both |
+| **Auto-download** | Models fetched automatically on first use |
+| **Compatibility** | Python 3.13, torch 2.x, CUDA 12/13, CPU |
+
+---
+
+## Installation
+
+1. Clone into your `ComfyUI/custom_nodes/` directory:
+   ```bash
+   cd ComfyUI/custom_nodes
+   git clone https://github.com/IBB666/IBB_POSE
+   ```
+2. Install base dependencies:
+   ```bash
+   cd IBB_POSE
+   pip install -r requirements.txt
+   ```
+3. Install only the backend you plan to use:
+   ```bash
+   # Choose ONE backend path based on your workflow / hardware:
+
+   # Body / OpenPose
+   pip install ultralytics
+
+   # WholeBody (CPU)
+   pip install onnxruntime
+
+   # WholeBody (GPU, optional replacement for CPU package)
+   # python -m pip uninstall -y onnxruntime
+   # pip install onnxruntime-gpu
+   ```
+4. Start ComfyUI – models download automatically on first use.
+
+### Windows / ComfyUI install note
+
+- `IBB_POSE` no longer requires `groundingdino-py`, `chumpy` or `huggingface_hub` during node installation.
+- If your embedded ComfyUI Python had previous failed installs cached, remove those partial packages before retrying, for example. Only do this if you know other nodes do not rely on those packages:
+  ```bash
+  python -m pip uninstall -y groundingdino-py chumpy huggingface_hub
+  python -m pip cache purge
+  ```
+- The node now keeps heavy pose backends optional and only imports them when the selected mode needs them.
+
+### Manual model placement
+
+| Mode | Model | Destination |
+|---|---|---|
+| Body / OpenPose | `yolo11n-pose.pt` (small), `yolo11m-pose.pt` (medium), `yolo11x-pose.pt` (large) | `ComfyUI/models/IBB_POSE/` |
+| WholeBody | `dw-ll_ucoco_384.onnx` + `yolox_l.onnx` | `ComfyUI/models/IBB_POSE/` |
+
+WholeBody models: [yzd-v/DWPose](https://huggingface.co/yzd-v/DWPose)
+
+---
+
+## Nodes
+
+### `IBB Pose — Load Model`
+
+Loads and caches the pose estimation model.
+
+| Parameter | Options | Description |
+|---|---|---|
+| `skeleton_type` | Body / WholeBody / OpenPose | Pose skeleton format |
+| `model_size` | small / medium / large | Model size / accuracy tradeoff |
+| `device` | auto / cuda / cpu | Inference device |
+| `precision` | fp32 / fp16 / bf16 | Numeric precision (fp32 for CPU) |
+| `auto_download` | True / False | Fetch model files automatically |
+
+**Output**: `IBB_POSE_MODEL`
+
+---
+
+### `IBB Pose — Run Estimation`
+
+Runs pose estimation on one or more images.
+
+| Parameter | Options | Description |
+|---|---|---|
+| `ibb_pose_model` | IBB_POSE_MODEL | Model from Load node |
+| `image` | IMAGE | Input image(s) |
+| `detection_mode` | single / multi | Person detection strategy |
+| `output_type` | PoseImage / JSON / Both | What to compute |
+| `score_threshold` | 0.05–0.95 | Minimum keypoint confidence |
+| `overlay_alpha` | 0.0–1.0 | 0=original, 1=pure pose map |
+| `pose_scale` | 0.1–5.0 | Line / dot thickness multiplier |
+| `keep_face` | bool | Include face keypoints (WholeBody) |
+| `keep_hands` | bool | Include hand keypoints (WholeBody) |
+| `keep_feet` | bool | Include foot keypoints (WholeBody) |
+| `save_json` | bool | Save JSON to `ComfyUI/output/` |
+| `filename_prefix` | string | Output JSON file prefix |
+
+**Outputs**: `pose_image` (IMAGE) · `pose_json` (STRING)
+
+---
+
+### `IBB Pose — JSON to Image`
 
 ## 模型目录
 
